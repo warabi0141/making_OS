@@ -91,6 +91,7 @@ pub struct MemoryMapIterator<'a> {
 impl<'a> Iterator for MemoryMapIterator<'a> {
     type Item = &'a EfiMemoryDescriptor;
     fn next(&mut self) -> Option<&'a EfiMemoryDescriptor> {
+        // オフセットがmemory_map_sizeを超えたらNone (オフセットはmemory_map内での位置を表すので)
         if self.ofs >= self.map.memory_map_size {
             None
         } else {

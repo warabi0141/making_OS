@@ -42,6 +42,7 @@ impl Header {
     fn can_provide(&self, size: usize, align: usize) -> bool {
         // This check is rough - actual size needed may be smaller.
         // HEADER_SIZE * 2 => one for allocated region, another for padding
+        // |--header--|---- size ----|--padding--| みたいな感じ？
         self.size >= size + HEADER_SIZE * 2 + align
     }
     fn is_allocated(&self) -> bool {
@@ -50,6 +51,7 @@ impl Header {
     fn end_addr(&self) -> usize {
         self as *const Header as usize + self.size
     }
+    // アドレスを受け取ってheaderを作る
     unsafe fn new_from_addr(addr: usize) -> Box<Header> {
         let header = addr as *mut Header;
         header.write(Header {
@@ -58,6 +60,8 @@ impl Header {
             is_allocated: false,
             _reserved: 0,
         });
+        // 生ポインタを受け取って、そのポインタが指すメモリの所有権を持つBoxを作る
+        // Boxはデータをヒープ領域上に割り当てる。さらにそのデータに対する所有権を持つ。Boxはスコープを抜けると自動的にメモリを開放する
         Box::from_raw(addr as *mut Header)
     }
     unsafe fn from_allocated_region(addr: *mut u8) -> Box<Header> {
@@ -75,7 +79,6 @@ impl Header {
         if self.is_allocated() || !self.can_provide(size, align) {
             None
         } else {
-            // Each char represents 32-byte chunks
             let mut size_used = 0;
             let allocated_addr = (self.end_addr() - size) & !(align - 1);
             let mut header_for_allocated = unsafe { Self::new_from_addr(allocated_addr - HEADER_SIZE) };
@@ -162,6 +165,7 @@ impl FirstFitAllocator {
             }
         }
     }
+    // headerの初期化 メモリマップを受け取って、各アドレスにheaderをつけていく？
     pub fn init_with_mmap(&self, memory_map: &MemoryMapHolder) {
         for e in memory_map.iter() {
             if e.memory_type() != EfiMemoryType::CONVENTIONAL_MEMORY {
@@ -175,9 +179,11 @@ impl FirstFitAllocator {
         let mut size = desc.number_of_pages() as usize * 4096;
         // Make sure the allocator does not include the address 0 as a free area.
         if start_addr == 0{
+            // 4KiB = 4096B
             start_addr += 4096;
             size = size.saturating_sub(4096);
         }
+        // メモリ不足
         if size <= 4096 {
             return;
         }
