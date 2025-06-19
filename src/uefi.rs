@@ -11,7 +11,7 @@ pub type EfiHandle = u64;
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct EfiGuid {
+struct EfiGuid { // GUID(Globally Unique Identifier): 特定のプロトコルを識別するために使う
     pub data0: u32,
     pub data1: u16,
     pub data2: u16,
@@ -55,7 +55,7 @@ pub enum EfiMemoryType {
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct EfiMemoryDescriptor {
+pub struct EfiMemoryDescriptor { // 個々のメモリ領域の情報を保持する
     memory_type: EfiMemoryType,
     physical_start: u64,
     virtual_start: u64,
@@ -76,9 +76,12 @@ impl EfiMemoryDescriptor {
 
 const MEMORY_MAP_BUFFER_SIZE: usize = 0x8000;
 
-pub struct MemoryMapHolder {
+pub struct MemoryMapHolder { // UEFIから取得したシステムのメモリマップ情報を保持する
+    // メモリ記述子を格納する固定サイズのバッファ
+    // メモリ記述子とはEfiMemoryDescriptorのこと
     memory_map_buffer: [u8; MEMORY_MAP_BUFFER_SIZE],
     memory_map_size: usize,
+    // メモリマップの一貫性を保証するためのキー
     map_key: usize,
     descriptor_size: usize,
     descriptor_version: u32,
@@ -114,12 +117,13 @@ impl MemoryMapHolder {
             descriptor_version: 0,
         }
     }
-    pub fn iter(&self) -> MemoryMapIterator {
+    pub fn iter(&self) -> MemoryMapIterator { // メモリマップ内の各記述子(EfiMemoryDescriptor)を順番に読み出すためのイテレータを返す
         MemoryMapIterator { map: self, ofs: 0 }
     }
 }
 #[repr(C)]
 pub struct EfiBootServicesTable {
+    // 使わないところは_resurvedで表す
     _resurved0: [u64; 7],
     get_memory_map: extern "win64" fn(
         memory_map_size: *mut usize,
@@ -129,6 +133,7 @@ pub struct EfiBootServicesTable {
         descriptor_version: *mut u32,
     ) -> EfiStatus,
     _resurved1: [u64; 21],
+    // UEFIブートサービスを終了して、OSに制御を引き継ぐための関数のポインタ
     exit_boot_services: extern "win64" fn(image_handle: EfiHandle, map_key: usize) -> EfiStatus,
     _reserved4: [u64; 10],
     locate_protocol: extern "win64" fn(
@@ -148,12 +153,13 @@ impl EfiBootServicesTable {
         )
     }
 }
+// offset_of!で構造体のメンバのオフセットを取得している
 const _: () = assert!(offset_of!(EfiBootServicesTable, get_memory_map) == 56);
 const _: () = assert!(offset_of!(EfiBootServicesTable, exit_boot_services) == 232);
 const _: () = assert!(offset_of!(EfiBootServicesTable, locate_protocol) == 320);
 
 #[repr(C)]
-pub struct EfiSystemTable {
+pub struct EfiSystemTable { // UEFIシステム全体の情報や、サービスへのアクセスポイント。uefi_mainでは第2引数になっている
     _reserved0: [u64; 12],
     boot_services: &'static EfiBootServicesTable,
 }
@@ -209,7 +215,7 @@ fn locate_graphic_protocol<'a>(
 }
 
 #[derive(Clone, Copy)]
-pub struct VramBufferInfo {
+pub struct VramBufferInfo { // VRAMの情報を保持
     buf: *mut u8,
     width: i64,
     height: i64,
@@ -243,7 +249,7 @@ pub fn init_vram(efi_system_table: &EfiSystemTable) -> Result<VramBufferInfo> {
         pixels_per_line: gp.mode.info.pixels_per_scan_line as i64,
     })
 }
-pub struct VramTextWriter<'a> {
+pub struct VramTextWriter<'a> { // VRAMにテキストを描画するための構造体
     vram: &'a mut VramBufferInfo,
     cursor_x: i64,
     cursor_y: i64,
@@ -257,7 +263,7 @@ impl<'a> VramTextWriter<'a> {
         }
     }
 }
-impl fmt::Write for VramTextWriter<'_> {
+impl fmt::Write for VramTextWriter<'_> { // fmt::Writeトレイトを実装することでwriteln!の引数としてVramTextWriterを使うことができる
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.chars() {
             if c == '\n' {
@@ -278,8 +284,10 @@ pub fn exit_from_efi_boot_services(
     memory_map: &mut MemoryMapHolder,
 ) {
     loop {
+        // メモリマップを取得
         let status = efi_system_table.boot_services.get_memory_map(memory_map);
         assert_eq!(status, EfiStatus::Success);
+        // ブートサービスからの離脱
         let status =
             (efi_system_table.boot_services.exit_boot_services)(image_handle, memory_map.map_key);
         if status == EfiStatus::Success {
